@@ -27,7 +27,11 @@ import { currentDir, StandaloneConfig, createLogger } from '@repo/kitties-api';
 
 const config = new StandaloneConfig();
 const dockerEnv = new DockerComposeEnvironment(path.resolve(currentDir, '..'), 'standalone.yml')
-  .withWaitStrategy('kitties-proof-server', Wait.forLogMessage('Actix runtime found; starting in Actix runtime', 1))
-  .withWaitStrategy('kitties-indexer', Wait.forLogMessage(/starting indexing/, 1));
+  // The proof-server downloads its proving parameters (tens of MB) on every fresh
+  // container start before it binds port 6300, which can take well over the default
+  // 60s wait. Wait on listening ports with an extended startup timeout so the bring-up
+  // doesn't fail with a premature "not bound"/"message not received" timeout.
+  .withWaitStrategy('kitties-proof-server', Wait.forListeningPorts().withStartupTimeout(240000))
+  .withWaitStrategy('kitties-indexer', Wait.forListeningPorts().withStartupTimeout(240000));
 const logger = await createLogger(config.logDir);
 await run(config, logger, dockerEnv);

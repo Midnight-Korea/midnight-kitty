@@ -23,7 +23,7 @@
   },
   "scripts": {
     "build": "rm -rf dist && tsc --project tsconfig.build.json && cp -Rf ./src/managed ./dist/managed && cp ./src/kitties.compact ./dist",
-    "compact": "export COMPACT_PATH=$COMPACT_PATH:./node_modules:../../node_modules:../../../node_modules && node ../../compact/src/run-compactc.cjs compile src/kitties.compact src/managed/kitties",
+    "compact": "export COMPACT_PATH=$COMPACT_PATH:./node_modules:../../node_modules:../../../node_modules && node ../../compact/src/run-compactc.cjs compile +0.24.0 src/kitties.compact src/managed/kitties",
     "lint": "eslint src",
     "test": "vitest run",
     "test:compile": "npm run compact && vitest run",
