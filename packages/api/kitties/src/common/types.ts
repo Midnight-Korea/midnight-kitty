@@ -24,12 +24,14 @@
  */
 
 import { Kitties, type KittiesPrivateState, type Gender, type Offer } from '@midnight-ntwrk/kitties-contract';
-import type { ImpureCircuitId, MidnightProviders } from '@midnight-ntwrk/midnight-js-types';
+import type { MidnightProviders } from '@midnight-ntwrk/midnight-js-types';
 import type { DeployedContract, FoundContract } from '@midnight-ntwrk/midnight-js-contracts';
 
 export type KittiesContract = Kitties.Contract<KittiesPrivateState>;
 
-export type ImpureKittiesCircuits = ImpureCircuitId<Kitties.Contract<KittiesPrivateState>>;
+// midnight-js 4.1.1 no longer exports `ImpureCircuitId`. The set of provable
+// (impure) circuit ids is the keys of the contract's generated `ImpureCircuits`.
+export type ImpureKittiesCircuits = keyof Kitties.ImpureCircuits<KittiesPrivateState> & string;
 
 export const KittiesPrivateStateId = 'kittiesPrivateState';
 

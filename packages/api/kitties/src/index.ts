@@ -23,12 +23,12 @@
  * damages or losses arising from the use of this software.
  */
 
-// Export common API for React compatibility
+// Export common + browser API. Node.js-only paths (src/node/**) are intentionally
+// excluded from this entrypoint so the package builds for the browser/web app.
+// The headless-wallet/CLI path is out of scope for the preprod migration.
 export * from './common/api.js';
 export * from './common/config.js';
 export * from './browser/config.js';
+export * from './browser/types.js';
 export * from './common/types.js';
-export * from './node/api.js';
 export * from './common/utils.js';
-export * from './node/logger-utils.js';
-export * from './node/utils.js';

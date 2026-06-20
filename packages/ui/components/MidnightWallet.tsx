@@ -20,25 +20,24 @@
  * damages or losses arising from the use of this software.
  */
 
-/* global console */
+/* global console, window, fetch, navigator, setTimeout */
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import type { Logger } from 'pino';
-import { type Address, type CoinPublicKey } from '@midnight-ntwrk/wallet-api';
 import { type ImpureKittiesCircuits, contractConfig } from '@repo/kitties-api';
 import {
-  type BalancedTransaction,
-  createBalancedTx,
   type ProofProvider,
   type PublicDataProvider,
-  type UnbalancedTransaction,
+  type UnboundTransaction,
 } from '@midnight-ntwrk/midnight-js-types';
 import { levelPrivateStateProvider } from '@midnight-ntwrk/midnight-js-level-private-state-provider';
 import { indexerPublicDataProvider } from '@midnight-ntwrk/midnight-js-indexer-public-data-provider';
-import { type CoinInfo, Transaction, type TransactionId } from '@midnight-ntwrk/ledger';
-import { Transaction as ZswapTransaction } from '@midnight-ntwrk/zswap';
-import { getLedgerNetworkId, getZswapNetworkId } from '@midnight-ntwrk/midnight-js-network-id';
+import {
+  Transaction,
+  type FinalizedTransaction,
+  type TransactionId,
+} from '@midnight-ntwrk/ledger-v8';
+import { fromHex, toHex } from '@midnight-ntwrk/compact-runtime';
 import { useRuntimeConfiguration } from '../config/RuntimeConfiguration';
-import type { DAppConnectorWalletAPI, ServiceUriConfig } from '@midnight-ntwrk/dapp-connector-api';
 import { useLocalState } from '../hooks/useLocalState';
 import type { ZKConfigProvider, WalletProvider, MidnightProvider } from '@midnight-ntwrk/midnight-js-types';
 import { MidnightWalletErrorType, WalletWidget } from './WalletWidget';
@@ -47,6 +46,15 @@ import { noopProofClient, proofClient } from '@repo/kitties-api/browser-api';
 import { WrappedPublicDataProvider } from '@repo/kitties-api/browser';
 import { WrappedPrivateStateProvider } from '@repo/kitties-api/browser';
 import { CachedFetchZkConfigProvider } from '@repo/kitties-api/browser-api';
+import type { WalletAPI } from '@repo/kitties-api';
+
+/**
+ * Fixed development password for the level-backed private state store. Must be at
+ * least 16 characters (midnight-js 4.1.1 enforces a minimum). This only encrypts
+ * the locally cached witness/private state in the browser - it is NOT a secret
+ * protecting on-chain funds.
+ */
+const DEV_PRIVATE_STATE_PASSWORD = 'midnight-kitties-dev-password';
 
 // Replace isChromeBrowser and window/fetch usages with safe checks for build/SSR
 function isChromeBrowser(): boolean {
@@ -60,25 +68,18 @@ function isChromeBrowser(): boolean {
 interface MidnightWalletState {
   isConnected: boolean;
   proofServerIsOnline: boolean;
-  address?: Address;
+  address?: string;
   widget?: React.ReactNode;
   walletAPI?: WalletAPI;
   privateStateProvider: any;
   zkConfigProvider: ZKConfigProvider<ImpureKittiesCircuits>;
-  proofProvider: ProofProvider<ImpureKittiesCircuits>;
+  proofProvider: ProofProvider;
   publicDataProvider: PublicDataProvider;
   walletProvider: WalletProvider;
   midnightProvider: MidnightProvider;
   providers: any;
   shake: () => void;
   callback: (action: ProviderCallbackAction) => void;
-}
-
-export interface WalletAPI {
-  wallet: DAppConnectorWalletAPI;
-  coinPublicKey: CoinPublicKey;
-  encryptionPublicKey: string;
-  uris: ServiceUriConfig;
 }
 
 export const getErrorType = (error: Error): MidnightWalletErrorType => {
@@ -132,7 +133,7 @@ export type ProviderCallbackAction =
 export const MidnightWalletProvider: React.FC<MidnightWalletProviderProps> = ({ logger, children }) => {
   const [isConnecting, setIsConnecting] = React.useState<boolean>(false);
   const [walletError, setWalletError] = React.useState<MidnightWalletErrorType | undefined>(undefined);
-  const [address, setAddress] = React.useState<Address | undefined>(undefined);
+  const [address, setAddress] = React.useState<string | undefined>(undefined);
   const [proofServerIsOnline, setProofServerIsOnline] = React.useState<boolean>(false);
   const config = useRuntimeConfiguration();
   const [isRotate, setRotate] = React.useState(false);
@@ -140,20 +141,25 @@ export const MidnightWalletProvider: React.FC<MidnightWalletProviderProps> = ({ 
   const [walletAPI, setWalletAPI] = useState<WalletAPI | undefined>(undefined);
   const [floatingOpen] = React.useState(true);
 
+  const providerCallback: (action: ProviderCallbackAction) => void = (_action: ProviderCallbackAction): void => {
+    // no-op
+  };
+
+  // Account id scopes the private state store to the connected wallet.
+  const accountId = walletAPI?.coinPublicKey || 'kitties-default-account';
+
   const privateStateProvider = useMemo(
     () =>
       new WrappedPrivateStateProvider(
         levelPrivateStateProvider({
           privateStateStoreName: contractConfig.privateStateStoreName,
+          privateStoragePasswordProvider: () => DEV_PRIVATE_STATE_PASSWORD,
+          accountId,
         }),
         logger,
       ),
-    [logger],
+    [logger, accountId],
   );
-
-  const providerCallback: (action: ProviderCallbackAction) => void = (_action: ProviderCallbackAction): void => {
-    // no-op
-  };
 
   const zkConfigProvider = useMemo(
     () =>
@@ -167,11 +173,15 @@ export const MidnightWalletProvider: React.FC<MidnightWalletProviderProps> = ({ 
   const publicDataProvider = useMemo(
     () =>
       new WrappedPublicDataProvider(
-        indexerPublicDataProvider(config.INDEXER_URI, config.INDEXER_WS_URI),
+        // Prefer the wallet-reported URIs, falling back to runtime config.
+        indexerPublicDataProvider(
+          walletAPI?.configuration.indexerUri ?? config.INDEXER_URI,
+          walletAPI?.configuration.indexerWsUri ?? config.INDEXER_WS_URI,
+        ),
         providerCallback,
         logger,
       ),
-    [],
+    [walletAPI],
   );
 
   function shake(): void {
@@ -181,61 +191,63 @@ export const MidnightWalletProvider: React.FC<MidnightWalletProviderProps> = ({ 
     }, 3000);
   }
 
-  const proofProvider = useMemo(() => {
-    if (walletAPI) {
-      return proofClient(walletAPI.uris.proverServerUri);
-    } else {
-      return noopProofClient();
+  const proofProvider = useMemo<ProofProvider>(() => {
+    const proverUri = walletAPI?.configuration.proverServerUri ?? config.PROOF_SERVER_URI;
+    if (walletAPI && proverUri) {
+      return proofClient<ImpureKittiesCircuits>(proverUri, zkConfigProvider);
     }
-  }, [walletAPI]);
+    return noopProofClient();
+  }, [walletAPI, zkConfigProvider]);
 
   const walletProvider: WalletProvider = useMemo(() => {
     if (walletAPI) {
+      const connected = walletAPI.connected;
       return {
-        coinPublicKey: walletAPI.coinPublicKey,
-        encryptionPublicKey: walletAPI.encryptionPublicKey,
-        balanceTx(tx: UnbalancedTransaction, newCoins: CoinInfo[]): Promise<BalancedTransaction> {
+        getCoinPublicKey: () => walletAPI.shielded.shieldedCoinPublicKey,
+        getEncryptionPublicKey: () => walletAPI.shielded.shieldedEncryptionPublicKey,
+        // zswap is gone: serialize the unbound tx, hand it to the wallet to
+        // balance + pay fees, then deserialize the returned sealed transaction.
+        async balanceTx(tx: UnboundTransaction, _ttl?: Date): Promise<FinalizedTransaction> {
           providerCallback('balanceTxStarted');
-          return walletAPI.wallet
-            .balanceAndProveTransaction(
-              ZswapTransaction.deserialize(tx.serialize(getLedgerNetworkId()), getZswapNetworkId()),
-              newCoins,
-            )
-            .then((zswapTx) => Transaction.deserialize(zswapTx.serialize(getZswapNetworkId()), getLedgerNetworkId()))
-            .then(createBalancedTx)
-            .finally(() => {
-              providerCallback('balanceTxDone');
-            });
-        },
-      };
-    } else {
-      return {
-        coinPublicKey: '',
-        encryptionPublicKey: '',
-        balanceTx(_tx: UnbalancedTransaction, _newCoins: CoinInfo[]): Promise<BalancedTransaction> {
-          return Promise.reject(new Error('readonly'));
+          try {
+            const serialized = toHex(tx.serialize());
+            const received = await connected.balanceUnsealedTransaction(serialized);
+            return Transaction.deserialize('signature', 'proof', 'binding', fromHex(received.tx));
+          } finally {
+            providerCallback('balanceTxDone');
+          }
         },
       };
     }
+    return {
+      getCoinPublicKey: () => '',
+      getEncryptionPublicKey: () => '',
+      balanceTx(_tx: UnboundTransaction, _ttl?: Date): Promise<FinalizedTransaction> {
+        return Promise.reject(new Error('readonly'));
+      },
+    };
   }, [walletAPI]);
 
   const midnightProvider: MidnightProvider = useMemo(() => {
     if (walletAPI) {
+      const connected = walletAPI.connected;
       return {
-        submitTx(tx: BalancedTransaction): Promise<TransactionId> {
+        async submitTx(tx: FinalizedTransaction): Promise<TransactionId> {
           providerCallback('submitTxStarted');
-          return walletAPI.wallet.submitTransaction(tx).finally(() => {
+          try {
+            await connected.submitTransaction(toHex(tx.serialize()));
+            return tx.identifiers()[0];
+          } finally {
             providerCallback('submitTxDone');
-          });
-        },
-      };
-    } else {
-      return {
-        submitTx(_tx: BalancedTransaction): Promise<TransactionId> {
-          return Promise.reject(new Error('readonly'));
+          }
         },
       };
     }
+    return {
+      submitTx(_tx: FinalizedTransaction): Promise<TransactionId> {
+        return Promise.reject(new Error('readonly'));
+      },
+    };
   }, [walletAPI]);
 
   const [walletState, setWalletState] = React.useState<MidnightWalletState>({
@@ -262,8 +274,8 @@ export const MidnightWalletProvider: React.FC<MidnightWalletProviderProps> = ({ 
     callback: providerCallback,
   });
 
-  async function checkProofServerStatus(proverServerUri: string): Promise<void> {
-    if (typeof fetch === 'undefined') {
+  async function checkProofServerStatus(proverServerUri?: string): Promise<void> {
+    if (typeof fetch === 'undefined' || !proverServerUri) {
       setProofServerIsOnline(false);
       return;
     }
@@ -282,31 +294,24 @@ export const MidnightWalletProvider: React.FC<MidnightWalletProviderProps> = ({ 
   async function connect(_manual: boolean): Promise<void> {
     localState.setLaceAutoConnect(true);
     setIsConnecting(true);
-    let walletResult;
+    let connectedWallet: WalletAPI | undefined;
     try {
-      walletResult = await connectToWallet(logger);
+      connectedWallet = await connectToWallet(logger);
     } catch (e) {
       const walletError = getErrorType(e as Error);
       setWalletError(walletError);
       setIsConnecting(false);
     }
-    if (!walletResult) {
+    if (!connectedWallet) {
       setIsConnecting(false);
-      // Removed setOpenWallet since dialog is disabled
       return;
     }
-    await checkProofServerStatus(walletResult.uris.proverServerUri);
+    await checkProofServerStatus(connectedWallet.configuration.proverServerUri ?? config.PROOF_SERVER_URI);
     try {
-      const reqState = await walletResult.wallet.state();
-      setAddress(reqState.address);
-      console.log('Connected wallet address:', reqState.address);
-      console.log('Wallet encryption public key:', (reqState as any).encryptionPublicKey);
-      setWalletAPI({
-        wallet: walletResult.wallet,
-        coinPublicKey: reqState.coinPublicKey,
-        encryptionPublicKey: (reqState as any).encryptionPublicKey || '',
-        uris: walletResult.uris,
-      });
+      setAddress(connectedWallet.shielded.shieldedAddress);
+      console.log('Connected wallet shielded address:', connectedWallet.shielded.shieldedAddress);
+      console.log('Wallet coin public key:', connectedWallet.shielded.shieldedCoinPublicKey);
+      setWalletAPI(connectedWallet);
     } catch (e) {
       setWalletError(MidnightWalletErrorType.TIMEOUT_API_RESPONSE);
     }

@@ -21,24 +21,37 @@
  * damages or losses arising from the use of this software.
  */
 
-// Proof provider utilities for browser environment
-import type { ProofProvider, UnbalancedTransaction, ProveTxConfig } from '@midnight-ntwrk/midnight-js-types';
-import type { UnprovenTransaction } from '@midnight-ntwrk/ledger';
+// Proof provider utilities for browser environment.
+//
+// midnight-js 4.1.1: the `ProofProvider` interface is no longer generic and
+// `httpClientProofProvider` now REQUIRES a ZKConfigProvider as its second
+// argument (proving is delegated to the proof server circuit-by-circuit using
+// the prover/verifier keys + ZKIR resolved by the ZK config provider).
+import type {
+  ProofProvider,
+  ProveTxConfig,
+  UnboundTransaction,
+  ZKConfigProvider,
+} from '@midnight-ntwrk/midnight-js-types';
+import type { UnprovenTransaction } from '@midnight-ntwrk/ledger-v8';
 import { httpClientProofProvider } from '@midnight-ntwrk/midnight-js-http-client-proof-provider';
 
-export const proofClient = <K extends string>(url: string): ProofProvider<K> => {
-  const httpClientProvider = httpClientProofProvider(url.trim());
+export const proofClient = <K extends string>(
+  url: string,
+  zkConfigProvider: ZKConfigProvider<K>,
+): ProofProvider => {
+  const httpClientProvider = httpClientProofProvider<K>(url.trim(), zkConfigProvider);
   return {
-    proveTx(tx: UnprovenTransaction, proveTxConfig?: ProveTxConfig<K>): Promise<UnbalancedTransaction> {
+    proveTx(tx: UnprovenTransaction, proveTxConfig?: ProveTxConfig): Promise<UnboundTransaction> {
       return httpClientProvider.proveTx(tx, proveTxConfig);
     },
   };
 };
 
-export const noopProofClient = <K extends string>(): ProofProvider<K> => {
+export const noopProofClient = (): ProofProvider => {
   return {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    async proveTx(tx: UnprovenTransaction): Promise<UnbalancedTransaction> {
+    async proveTx(_tx: UnprovenTransaction, _proveTxConfig?: ProveTxConfig): Promise<UnboundTransaction> {
       throw new Error('Proof client not implemented');
     },
   };

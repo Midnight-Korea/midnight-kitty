@@ -19,8 +19,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import type { DAppConnectorWalletAPI, ServiceUriConfig } from '@midnight-ntwrk/dapp-connector-api';
-import type { CoinPublicKey } from '@midnight-ntwrk/wallet-api';
+import type { ConnectedAPI, Configuration } from '@midnight-ntwrk/dapp-connector-api';
 
 export type ProviderCallbackAction =
   | 'downloadProverStarted'
@@ -34,8 +33,27 @@ export type ProviderCallbackAction =
   | 'watchForTxDataStarted'
   | 'watchForTxDataDone';
 
+/**
+ * Shielded address material returned by the Lace DApp connector (dapp-connector-api 4.x).
+ * All values are bech32m strings.
+ */
+export interface ShieldedAddresses {
+  shieldedAddress: string;
+  shieldedCoinPublicKey: string;
+  shieldedEncryptionPublicKey: string;
+}
+
+/**
+ * Everything the app needs after a successful `connect('preprod')` against Lace.
+ * Replaces the old DAppConnectorWalletAPI + ServiceUriConfig shape (removed in 4.0.1).
+ */
 export interface WalletAPI {
-  wallet: DAppConnectorWalletAPI;
-  coinPublicKey: CoinPublicKey;
-  uris: ServiceUriConfig;
+  /** The connected DApp connector API instance (post `connect`). */
+  connected: ConnectedAPI;
+  /** Shielded addresses / public keys (bech32m). */
+  shielded: ShieldedAddresses;
+  /** Service URIs reported by the wallet. */
+  configuration: Configuration;
+  /** Convenience accessor: the shielded coin public key (bech32m). */
+  coinPublicKey: string;
 }

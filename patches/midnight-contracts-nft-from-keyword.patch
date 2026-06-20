@@ -1,0 +1,39 @@
+--- /tmp/Nft.compact.orig	2026-06-21 07:47:26
++++ node_modules/midnight-contracts/contracts/tokens/nft/src/modules/Nft.compact	2026-06-21 07:47:26
+@@ -120,16 +120,16 @@
+   }
+ 
+   // Transfers ownership of a given token ID from one public key to another
+-  export circuit transferFrom(from: ZswapCoinPublicKey, to: ZswapCoinPublicKey, tokenId: Uint<64>): [] {
++  export circuit transferFrom(fromOwner: ZswapCoinPublicKey, to: ZswapCoinPublicKey, tokenId: Uint<64>): [] {
+     const senderPublicKey = ownPublicKey();
+     assert(tokenId != default<Uint<64>>, "Token ID cannot be empty.");
+     assert(isApprovedOrOwner(disclose(senderPublicKey), disclose(tokenId)), "Not authorized to transfer.");
+ 
+     // Clear approval for this token
+-    clearApproval(disclose(from), disclose(tokenId));
++    clearApproval(disclose(fromOwner), disclose(tokenId));
+     
+     // Remove token from the current owner
+-    removeTokenFrom(disclose(from), disclose(tokenId));
++    removeTokenFrom(disclose(fromOwner), disclose(tokenId));
+     
+     // Add token to the new owner
+     addTokenTo(disclose(to), disclose(tokenId));
+@@ -183,12 +183,12 @@
+   }
+ 
+   // Removes a token from a public key, updating ownership and balance
+-  circuit removeTokenFrom(from: ZswapCoinPublicKey, tokenId: Uint<64>): [] {
+-    assert(from != default<ZswapCoinPublicKey>, "Sender cannot be empty.");
+-    assert(from == ownerOf(tokenId), "Public key is not the owner.");
++  circuit removeTokenFrom(fromOwner: ZswapCoinPublicKey, tokenId: Uint<64>): [] {
++    assert(fromOwner != default<ZswapCoinPublicKey>, "Sender cannot be empty.");
++    assert(fromOwner == ownerOf(tokenId), "Public key is not the owner.");
+     
+     // Decrement the owner's token count
+-    ownedTokensCount.lookup(from).decrement(1);
++    ownedTokensCount.lookup(fromOwner).decrement(1);
+     // Remove the token from the owner
+     tokenOwner.remove(tokenId);
+   }

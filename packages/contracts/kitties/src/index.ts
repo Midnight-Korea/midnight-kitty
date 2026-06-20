@@ -23,16 +23,33 @@
  * damages or losses arising from the use of this software.
  */
 
-import ContractModule from "./managed/kitties/contract/index.cjs";
+import * as ContractModule from "./managed/kitties/contract/index.js";
 import type {
   Kitty,
   Ledger,
   Gender,
   Offer
-} from "./managed/kitties/contract/index.cjs";
+} from "./managed/kitties/contract/index.js";
+import { CompiledContract } from "@midnight-ntwrk/compact-js";
+import { witnesses as kittiesWitnesses } from "./witnesses.js";
+import type { KittiesPrivateState as KittiesPrivateStateT } from "./witnesses.js";
 
 export const pureCircuits = ContractModule.pureCircuits;
-export * as Kitties from "./managed/kitties/contract/index.cjs";
+export * as Kitties from "./managed/kitties/contract/index.js";
+
+/**
+ * The compiled contract object midnight-js 4.x expects in
+ * `deployContract`/`findDeployedContract` ({ compiledContract }). It wraps the
+ * generated `Contract` constructor with the off-chain witnesses and the path to
+ * the compiled ZK assets (keys/zkir under ./managed/kitties). Mirrors the
+ * official example-bboard `CompiledContract.make(...).pipe(...)` pattern.
+ */
+export const CompiledKittiesContract = CompiledContract.make<
+  ContractModule.Contract<KittiesPrivateStateT>
+>("Kitties", ContractModule.Contract as never).pipe(
+  CompiledContract.withWitnesses(kittiesWitnesses),
+  CompiledContract.withCompiledFileAssets("./managed/kitties"),
+);
 
 export * from "./witnesses.js";
 export type { KittiesPrivateState } from "./witnesses.js";

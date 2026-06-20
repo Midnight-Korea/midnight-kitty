@@ -28,6 +28,7 @@
 import { type ContractAddress } from '@midnight-ntwrk/compact-runtime';
 import {
   Kitties,
+  CompiledKittiesContract,
   type KittiesPrivateState,
   createKittiesPrivateState,
   witnesses,
@@ -36,7 +37,7 @@ import {
 } from '@midnight-ntwrk/kitties-contract';
 import { deployContract, findDeployedContract } from '@midnight-ntwrk/midnight-js-contracts';
 
-import { assertIsContractAddress, toHex, parseCoinPublicKeyToHex } from '@midnight-ntwrk/midnight-js-utils';
+import { assertIsContractAddress, toHex } from '@midnight-ntwrk/midnight-js-utils';
 import type { PrivateStateProvider } from '@midnight-ntwrk/midnight-js-types';
 import { map, type Observable, retry } from 'rxjs';
 import {
@@ -57,7 +58,13 @@ import {
 } from './types.js';
 
 // Single shared contract instance to ensure consistency
-const kittiesContractInstance: KittiesContract = new Kitties.Contract(witnesses);
+// midnight-js 4.x expects a CompiledContract (built in the contract package via
+// CompiledContract.make(...).pipe(withWitnesses, withCompiledFileAssets)), not a
+// raw `new Contract(witnesses)` instance.
+const kittiesContractInstance = CompiledKittiesContract;
+// Keep a raw instance available for any type-only/contract-shape references.
+const _rawKittiesContract: KittiesContract = new Kitties.Contract(witnesses);
+void _rawKittiesContract;
 
 // Unified API interfaces
 export interface DeployedKittiesAPI {
@@ -410,10 +417,14 @@ export class KittiesAPI implements DeployedKittiesAPI {
 
       console.log('Calling deployContract ...');
       const deployedContract = await deployContract(providers as any, {
-        contract: kittiesContractInstance,
+        // The generated contract instance is structurally a CompiledContract at
+        // runtime; cast to satisfy the 4.1.1 `compiledContract` option type.
+        compiledContract: kittiesContractInstance as any,
+        // The Kitties contract constructor takes no initialization arguments.
+        args: [],
         privateStateId: 'kittiesPrivateState',
         initialPrivateState: await KittiesAPI.getPrivateState('kittiesPrivateState', providers.privateStateProvider),
-      });
+      } as any);
 
       console.log(`Deployed contract at address: ${deployedContract.deployTxData.public.contractAddress}`);
 
@@ -452,7 +463,7 @@ export class KittiesAPI implements DeployedKittiesAPI {
     try {
       const deployedContract = await findDeployedContract(providers as any, {
         contractAddress,
-        contract: kittiesContractInstance,
+        compiledContract: kittiesContractInstance as any,
         privateStateId: 'kittiesPrivateState',
         initialPrivateState: state,
       });

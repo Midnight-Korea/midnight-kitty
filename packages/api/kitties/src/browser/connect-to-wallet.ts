@@ -20,94 +20,98 @@
  * damages or losses arising from the use of this software.
  */
 
-/* global console */
+/* global console, globalThis */
 import type { Logger } from 'pino';
-import type { DAppConnectorAPI, DAppConnectorWalletAPI, ServiceUriConfig } from '@midnight-ntwrk/dapp-connector-api';
-import { concatMap, filter, firstValueFrom, interval, map, of, take, tap, throwError, timeout } from 'rxjs';
-import { pipe as fnPipe } from 'fp-ts/function';
+import type { InitialAPI, ConnectedAPI } from '@midnight-ntwrk/dapp-connector-api';
 import semver from 'semver';
+import type { ShieldedAddresses, WalletAPI } from './types.js';
 
-export const connectToWallet = (
-  logger: Logger,
-): Promise<{ wallet: DAppConnectorWalletAPI; uris: ServiceUriConfig }> => {
-  const COMPATIBLE_CONNECTOR_API_VERSION = '1.x';
+/**
+ * The network id hint passed to the Lace connector. The preprod stack uses 'preprod'.
+ */
+export const PREPROD_NETWORK_ID = 'preprod';
 
-  return firstValueFrom(
-    fnPipe(
-      interval(100),
-      map(() => {
-        if (typeof globalThis !== 'undefined' && typeof globalThis.window !== 'undefined') {
-          // @ts-ignore
-          return globalThis.window.midnight?.mnLace;
-        }
-        return undefined;
-      }),
-      tap((connectorAPI) => {
-        logger.info(connectorAPI, 'Check for wallet connector API');
-      }),
-      filter((connectorAPI): connectorAPI is DAppConnectorAPI => !!connectorAPI),
-      concatMap((connectorAPI) =>
-        semver.satisfies(connectorAPI.apiVersion, COMPATIBLE_CONNECTOR_API_VERSION)
-          ? of(connectorAPI)
-          : throwError(() => {
-              logger.error(
-                {
-                  expected: COMPATIBLE_CONNECTOR_API_VERSION,
-                  actual: connectorAPI.apiVersion,
-                },
-                'Incompatible version of wallet connector API',
-              );
+/**
+ * The dapp-connector-api version range this app is built against (4.x).
+ */
+const COMPATIBLE_CONNECTOR_API_VERSION = '4.x';
 
-              return new Error(
-                `Incompatible version of Midnight Lace wallet found. Require '${COMPATIBLE_CONNECTOR_API_VERSION}', got '${connectorAPI.apiVersion}'.`,
-              );
-            }),
-      ),
-      tap((connectorAPI) => {
-        logger.info(connectorAPI, 'Compatible wallet connector API found. Connecting.');
-      }),
-      take(1),
-      timeout({
-        first: 1_000,
-        with: () =>
-          throwError(() => {
-            logger.error('Could not find wallet connector API');
-
-            return new Error('Could not find Midnight Lace wallet. Extension installed?');
-          }),
-      }),
-      concatMap(async (connectorAPI) => {
-        const isEnabled = await connectorAPI.isEnabled();
-
-        logger.info(isEnabled, 'Wallet connector API enabled status');
-
-        return connectorAPI;
-      }),
-      timeout({
-        first: 5_000,
-        with: () =>
-          throwError(() => {
-            logger.error('Wallet connector API has failed to respond');
-            return new Error('Midnight Lace wallet has failed to respond. Extension enabled?');
-          }),
-      }),
-      concatMap(async (connectorAPI) => {
-        try {
-          return {
-            walletConnectorAPI: await connectorAPI.enable(),
-            connectorAPI,
-          };
-        } catch (e) {
-          logger.error('Unable to enable connector API');
-          throw new Error('Application is not authorized');
-        }
-      }),
-      concatMap(async ({ walletConnectorAPI, connectorAPI }) => {
-        const uris = await connectorAPI.serviceUriConfig();
-
-        logger.info('Connected to wallet connector API and retrieved service configuration');
-        return { wallet: walletConnectorAPI, uris };
-      }),
-    ),
+/**
+ * `window.midnight` is a record of injected connectors, keyed by a discovery key
+ * (e.g. a UUID). Each value is an {@link InitialAPI}. We find the first one that
+ * exposes a compatible `apiVersion`.
+ */
+function findInitialAPI(): InitialAPI | undefined {
+  if (typeof globalThis === 'undefined' || typeof (globalThis as any).window === 'undefined') {
+    return undefined;
+  }
+  const midnight = (globalThis as any).window.midnight as Record<string, unknown> | undefined;
+  if (!midnight) {
+    return undefined;
+  }
+  return Object.values(midnight).find(
+    (w): w is InitialAPI =>
+      !!w &&
+      typeof w === 'object' &&
+      'apiVersion' in (w as Record<string, unknown>) &&
+      typeof (w as InitialAPI).apiVersion === 'string' &&
+      typeof (w as InitialAPI).connect === 'function' &&
+      semver.satisfies((w as InitialAPI).apiVersion, COMPATIBLE_CONNECTOR_API_VERSION),
   );
+}
+
+/**
+ * Poll `window.midnight` until a compatible connector appears (or we time out).
+ */
+async function waitForInitialAPI(logger: Logger, timeoutMs = 5_000, intervalMs = 100): Promise<InitialAPI> {
+  const start = Date.now();
+  for (;;) {
+    const api = findInitialAPI();
+    if (api) {
+      logger.info({ rdns: api.rdns, name: api.name, apiVersion: api.apiVersion }, 'Compatible wallet connector found');
+      return api;
+    }
+    if (Date.now() - start > timeoutMs) {
+      logger.error('Could not find wallet connector API');
+      throw new Error('Could not find Midnight Lace wallet. Extension installed and on the preprod network?');
+    }
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+  }
+}
+
+/**
+ * Connect to the Lace DApp connector on the 'preprod' network and gather the
+ * information the dApp needs to build providers.
+ */
+export const connectToWallet = async (logger: Logger): Promise<WalletAPI> => {
+  const initialAPI = await waitForInitialAPI(logger);
+
+  let connected: ConnectedAPI;
+  try {
+    connected = await initialAPI.connect(PREPROD_NETWORK_ID);
+  } catch (e) {
+    logger.error(e, 'Unable to connect to wallet connector API');
+    throw new Error('Application is not authorized');
+  }
+
+  const status = await connected.getConnectionStatus();
+  if (status.status !== 'connected') {
+    logger.error({ status }, 'Wallet reported disconnected status after connect');
+    throw new Error('Midnight Lace wallet is not connected.');
+  }
+  logger.info({ networkId: status.networkId }, 'Connected to wallet');
+
+  const shielded: ShieldedAddresses = await connected.getShieldedAddresses();
+  const configuration = await connected.getConfiguration();
+  logger.info(
+    { indexerUri: configuration.indexerUri, networkId: configuration.networkId },
+    'Retrieved wallet service configuration',
+  );
+
+  return {
+    connected,
+    shielded,
+    configuration,
+    coinPublicKey: shielded.shieldedCoinPublicKey,
+  };
 };

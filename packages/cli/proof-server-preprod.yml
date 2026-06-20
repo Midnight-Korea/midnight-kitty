@@ -1,0 +1,12 @@
+services:
+  proof-server:
+    container_name: 'kitties-proof-server-preprod'
+    image: 'midnightntwrk/proof-server:8.0.3'
+    # proof-server 8.x is network-agnostic (no --network flag); default CMD is
+    # `midnight-proof-server --port $PORT`. It downloads proving params on first
+    # start, so give it a moment before the indexer/app use it.
+    environment:
+      PORT: '6300'
+      RUST_BACKTRACE: 'full'
+    ports:
+      - '6300:6300'

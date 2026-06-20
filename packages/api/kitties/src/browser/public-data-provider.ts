@@ -23,13 +23,20 @@ import type {
   ContractStateObservableConfig,
   FinalizedTxData,
   PublicDataProvider,
+  UnshieldedBalances,
 } from '@midnight-ntwrk/midnight-js-types';
 import type { Logger } from 'pino';
 import type { ContractAddress, ContractState } from '@midnight-ntwrk/compact-runtime';
-import { retryWithBackoff } from './retry-with-backoff';
-import type { TransactionId, ZswapChainState } from '@midnight-ntwrk/ledger';
+import { retryWithBackoff } from './retry-with-backoff.js';
+import type { LedgerParameters, TransactionId, ZswapChainState } from '@midnight-ntwrk/ledger-v8';
 import type { Observable } from 'rxjs';
 
+/**
+ * Wraps a {@link PublicDataProvider} (midnight-js 4.1.1) adding retry/backoff to the
+ * query methods and a callback hook around `watchForTxData`. New 4.x methods
+ * (`queryZSwapAndContractState` now returns a 3-tuple, plus the unshielded-balance
+ * methods) are delegated through so the wrapper satisfies the full interface.
+ */
 export class WrappedPublicDataProvider implements PublicDataProvider {
   constructor(
     private readonly wrapped: PublicDataProvider,
@@ -51,7 +58,7 @@ export class WrappedPublicDataProvider implements PublicDataProvider {
   queryZSwapAndContractState(
     contractAddress: ContractAddress,
     config?: BlockHeightConfig | BlockHashConfig,
-  ): Promise<[ZswapChainState, ContractState] | null> {
+  ): Promise<[ZswapChainState, ContractState, LedgerParameters] | null> {
     return retryWithBackoff(
       () => this.wrapped.queryZSwapAndContractState(contractAddress, config),
       'queryZSwapAndContractState',
@@ -67,10 +74,29 @@ export class WrappedPublicDataProvider implements PublicDataProvider {
     );
   }
 
+  queryUnshieldedBalances(
+    contractAddress: ContractAddress,
+    config?: BlockHeightConfig | BlockHashConfig,
+  ): Promise<UnshieldedBalances | null> {
+    return retryWithBackoff(
+      () => this.wrapped.queryUnshieldedBalances(contractAddress, config),
+      'queryUnshieldedBalances',
+      this.logger,
+    );
+  }
+
   watchForContractState(contractAddress: ContractAddress): Promise<ContractState> {
     return retryWithBackoff(
       () => this.wrapped.watchForContractState(contractAddress),
       'watchForContractState',
+      this.logger,
+    );
+  }
+
+  watchForUnshieldedBalances(contractAddress: ContractAddress): Promise<UnshieldedBalances> {
+    return retryWithBackoff(
+      () => this.wrapped.watchForUnshieldedBalances(contractAddress),
+      'watchForUnshieldedBalances',
       this.logger,
     );
   }
@@ -98,5 +124,12 @@ export class WrappedPublicDataProvider implements PublicDataProvider {
 
   contractStateObservable(address: ContractAddress, config: ContractStateObservableConfig): Observable<ContractState> {
     return this.wrapped.contractStateObservable(address, config);
+  }
+
+  unshieldedBalancesObservable(
+    address: ContractAddress,
+    config: ContractStateObservableConfig,
+  ): Observable<UnshieldedBalances> {
+    return this.wrapped.unshieldedBalancesObservable(address, config);
   }
 }

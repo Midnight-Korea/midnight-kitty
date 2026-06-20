@@ -25,23 +25,47 @@
 
 import React, { useState } from 'react';
 import CssBaseline from '@mui/material/CssBaseline';
-import { ThemeProvider, Container, Box, Typography, Paper } from '@mui/material';
+import { ThemeProvider, Container, Box, Typography, Paper, Button, CircularProgress, Alert } from '@mui/material';
 import { theme } from '../config/theme.js';
 import { LocalStateProvider } from '../contexts/LocalStateProviderContext.js';
 import { RuntimeConfigurationProvider, useRuntimeConfiguration } from '../config/RuntimeConfiguration.js';
 import { MidnightWalletProvider, useMidnightWallet } from './MidnightWallet.js';
 import * as pino from 'pino';
-import { type NetworkId, setNetworkId, getZswapNetworkId } from '@midnight-ntwrk/midnight-js-network-id';
+import { type NetworkId, setNetworkId, getNetworkId } from '@midnight-ntwrk/midnight-js-network-id';
 import { parseCoinPublicKeyToHex } from '@midnight-ntwrk/midnight-js-utils';
 import { KittiesReaderApplication } from './KittiesReader.js';
 import { type Logger } from 'pino';
 import { createKittiesProviders } from '@repo/kitties-api/browser-api';
-import type { KittiesProviders } from '@repo/kitties-api';
+import { KittiesAPI, type KittiesProviders } from '@repo/kitties-api';
 
 const KittiesAppContent: React.FC<{ logger: Logger }> = () => {
   const walletState = useMidnightWallet();
   const [kittiesProviders, setKittiesProviders] = useState<KittiesProviders | null>(null);
   const [providersLoading, setProvidersLoading] = useState(false);
+  const [deploying, setDeploying] = useState(false);
+  const [deployedAddress, setDeployedAddress] = useState<string | null>(null);
+  const [deployError, setDeployError] = useState<string | null>(null);
+
+  // Deploy a brand-new Kitties contract to preprod via the connected Lace wallet.
+  const handleDeploy = React.useCallback(async () => {
+    if (!kittiesProviders) {
+      return;
+    }
+    setDeploying(true);
+    setDeployError(null);
+    setDeployedAddress(null);
+    try {
+      const initialPrivateState = await KittiesAPI.getOrCreateInitialPrivateState(
+        kittiesProviders.privateStateProvider,
+      );
+      const api = await KittiesAPI.deploy(kittiesProviders, initialPrivateState);
+      setDeployedAddress(api.deployedContractAddress);
+    } catch (err) {
+      setDeployError(err instanceof Error ? err.message : 'Failed to deploy contract');
+    } finally {
+      setDeploying(false);
+    }
+  }, [kittiesProviders]);
 
   // Initialize providers when wallet is connected
   React.useEffect(() => {
@@ -102,14 +126,46 @@ const KittiesAppContent: React.FC<{ logger: Logger }> = () => {
                 </Typography>
               </Paper>
             ) : kittiesProviders ? (
-              <KittiesReaderApplication
-                providers={kittiesProviders}
-                walletPublicKey={
-                  walletState.walletAPI?.coinPublicKey
-                    ? parseCoinPublicKeyToHex(walletState.walletAPI.coinPublicKey, getZswapNetworkId())
-                    : undefined
-                }
-              />
+              <Box sx={{ width: '100%' }}>
+                {/* Deploy a new Kitties contract to preprod via Lace */}
+                <Paper elevation={2} sx={{ p: 3, mb: 3, textAlign: 'center' }}>
+                  <Typography variant="h6" gutterBottom>
+                    Deploy a new Kitties contract
+                  </Typography>
+                  <Typography variant="body2" color="textSecondary" sx={{ mb: 2 }}>
+                    Deploy a fresh Kitties contract to the preprod network using your connected Lace wallet.
+                  </Typography>
+                  <Button variant="contained" onClick={() => void handleDeploy()} disabled={deploying}>
+                    {deploying ? (
+                      <>
+                        <CircularProgress size={18} sx={{ mr: 1, color: 'white' }} /> Deploying...
+                      </>
+                    ) : (
+                      'Deploy new Kitties contract'
+                    )}
+                  </Button>
+                  {deployedAddress && (
+                    <Alert severity="success" sx={{ mt: 2, wordBreak: 'break-all' }}>
+                      Deployed at: <strong>{deployedAddress}</strong>
+                    </Alert>
+                  )}
+                  {deployError && (
+                    <Alert severity="error" sx={{ mt: 2 }}>
+                      {deployError}
+                    </Alert>
+                  )}
+                </Paper>
+
+                <KittiesReaderApplication
+                  providers={kittiesProviders}
+                  initialAddress={(deployedAddress as never) ?? undefined}
+                  walletPublicKey={
+                    walletState.walletAPI?.coinPublicKey
+                      ? parseCoinPublicKeyToHex(walletState.walletAPI.coinPublicKey, getNetworkId())
+                      : undefined
+                  }
+                />
+              </Box>
             ) : (
               <Paper elevation={3} sx={{ p: 4, textAlign: 'center' }}>
                 <Typography variant="h6" color="error">
@@ -140,7 +196,7 @@ const KittiesAppContent: React.FC<{ logger: Logger }> = () => {
         <Typography variant="body2">CoinPublicKey: {walletState.walletAPI?.coinPublicKey}</Typography>
         {walletState.walletAPI?.coinPublicKey && (
           <Typography variant="body2">
-            CoinPublicKey (hex): {parseCoinPublicKeyToHex(walletState.walletAPI.coinPublicKey, getZswapNetworkId())}
+            CoinPublicKey (hex): {parseCoinPublicKeyToHex(walletState.walletAPI.coinPublicKey, getNetworkId())}
           </Typography>
         )}
       </Paper>

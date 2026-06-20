@@ -46,9 +46,9 @@ interface RuntimeConfigurationProviderProps {
  * Loads runtime configuration using the unified configuration system.
  */
 export const loadRuntimeConfiguration = (): RuntimeConfiguration => {
-  // Use default testnet-remote configuration for now
+  // Default to the preprod stack.
   // TODO: Add environment detection in a separate component with proper DOM types
-  return loadBrowserConfiguration('testnet-remote');
+  return loadBrowserConfiguration('preprod');
 };
 
 export const RuntimeConfigurationProvider: React.FC<RuntimeConfigurationProviderProps> = ({ children }) => {

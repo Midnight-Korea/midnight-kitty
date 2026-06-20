@@ -17,11 +17,6 @@
       "import": "./dist/index.js",
       "require": "./dist/index.js"
     },
-    "./node-api": {
-      "types": "./dist/node/api.d.ts",
-      "import": "./dist/node/api.js",
-      "require": "./dist/node/api.js"
-    },
     "./common-api": {
       "types": "./dist/common/api.d.ts",
       "import": "./dist/common/api.js",

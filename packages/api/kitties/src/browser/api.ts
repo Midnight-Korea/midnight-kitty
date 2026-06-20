@@ -33,16 +33,34 @@ import {
   MidnightProvider,
   PrivateStateProvider,
 } from '@midnight-ntwrk/midnight-js-types';
-import { proofClient, noopProofClient } from './proof-client';
-import { CachedFetchZkConfigProvider } from './zk-config-provider';
+import { proofClient, noopProofClient } from './proof-client.js';
+import { CachedFetchZkConfigProvider } from './zk-config-provider.js';
 import { KittiesPrivateState } from '@midnight-ntwrk/kitties-contract';
-import { ImpureKittiesCircuits, KittiesProviders } from '../common/types';
-import { contractConfig } from '../common/config';
-import { WalletAPI, ProviderCallbackAction } from './types';
+import { ImpureKittiesCircuits, KittiesProviders } from '../common/types.js';
+import { contractConfig } from '../common/config.js';
+import { WalletAPI, ProviderCallbackAction } from './types.js';
 
-export { proofClient, noopProofClient } from './proof-client';
-export { CachedFetchZkConfigProvider } from './zk-config-provider';
+export { proofClient, noopProofClient } from './proof-client.js';
+export { CachedFetchZkConfigProvider } from './zk-config-provider.js';
 
+/**
+ * Fixed development password for the in-browser level-backed private state store.
+ * midnight-js 4.1.1's `levelPrivateStateProvider` requires a password of at least
+ * 16 characters. This is NOT a secret protecting on-chain funds - it only encrypts
+ * the locally-cached witness/private state in the browser's IndexedDB.
+ */
+export const DEV_PRIVATE_STATE_PASSWORD = 'midnight-kitties-dev-password';
+
+/**
+ * Build the full set of providers used by the Kitties dApp.
+ *
+ * @param publicDataProvider Indexer-backed public data provider (already wrapped).
+ * @param walletProvider     Lace-backed wallet provider (balanceTx + public keys).
+ * @param midnightProvider   Lace-backed submit provider.
+ * @param walletAPI          Connected wallet info; its shielded coin public key is
+ *                           used to scope (account-id) the private state store.
+ * @param callback           UI progress callback.
+ */
 export const createKittiesProviders = (
   publicDataProvider: PublicDataProvider,
   walletProvider: WalletProvider,
@@ -50,19 +68,31 @@ export const createKittiesProviders = (
   walletAPI: WalletAPI,
   callback: (action: ProviderCallbackAction) => void,
 ): KittiesProviders => {
+  const zkConfigProvider = new CachedFetchZkConfigProvider<ImpureKittiesCircuits>(
+    window.location.origin,
+    fetch.bind(window),
+    callback,
+  );
+
   const privateStateProvider: PrivateStateProvider<'kittiesPrivateState', KittiesPrivateState> =
     levelPrivateStateProvider({
       privateStateStoreName: contractConfig.privateStateStoreName,
+      privateStoragePasswordProvider: () => DEV_PRIVATE_STATE_PASSWORD,
+      // Scope the store per connected wallet (account). Falls back to a fixed id
+      // if no coin public key is available.
+      accountId: walletAPI.coinPublicKey || 'kitties-default-account',
     });
-  const proofProvider = proofClient(walletAPI.uris.proverServerUri);
+
+  // Proving is delegated to the wallet-configured proof server, using the ZK
+  // config provider to resolve prover/verifier keys + ZKIR.
+  const proofProvider = walletAPI.configuration.proverServerUri
+    ? proofClient<ImpureKittiesCircuits>(walletAPI.configuration.proverServerUri, zkConfigProvider)
+    : noopProofClient();
+
   return {
     privateStateProvider,
     publicDataProvider,
-    zkConfigProvider: new CachedFetchZkConfigProvider<ImpureKittiesCircuits>(
-      window.location.origin,
-      fetch.bind(window),
-      callback,
-    ),
+    zkConfigProvider,
     proofProvider,
     walletProvider,
     midnightProvider,

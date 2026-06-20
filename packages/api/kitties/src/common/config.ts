@@ -23,8 +23,16 @@
  * damages or losses arising from the use of this software.
  */
 
-import { NetworkId, setNetworkId } from '@midnight-ntwrk/midnight-js-network-id';
+import { type NetworkId, setNetworkId } from '@midnight-ntwrk/midnight-js-network-id';
 import { getDirPath } from './path-resolver.js';
+
+// midnight-js 4.1.1: `NetworkId` is just a string alias (the old enum is gone).
+// These are the canonical named networks used across the app.
+export const NETWORK_IDS = {
+  Preprod: 'preprod',
+  TestNet: 'testnet',
+  Undeployed: 'undeployed',
+} as const satisfies Record<string, NetworkId>;
 import { existsSync, readFileSync, isNodeEnvironment, pathUtils } from './env.js';
 
 // Get current directory in a way that works in both ESM and CJS
@@ -172,7 +180,7 @@ export class TestnetLocalConfig implements Config {
   node = 'http://127.0.0.1:9944';
   proofServer = 'http://127.0.0.1:6300';
   constructor() {
-    setNetworkId(NetworkId.TestNet);
+    setNetworkId(NETWORK_IDS.TestNet);
   }
 }
 
@@ -183,18 +191,18 @@ export class StandaloneConfig implements Config {
   node = 'http://127.0.0.1:9944';
   proofServer = 'http://127.0.0.1:6300';
   constructor() {
-    setNetworkId(NetworkId.Undeployed);
+    setNetworkId(NETWORK_IDS.Undeployed);
   }
 }
 
-export class TestnetRemoteConfig implements Config {
-  logDir = pathUtils.resolve(currentDir, '..', 'logs', 'testnet-remote', `${new Date().toISOString()}.log`);
-  indexer = 'https://indexer.testnet-02.midnight.network/api/v1/graphql';
-  indexerWS = 'wss://indexer.testnet-02.midnight.network/api/v1/graphql/ws';
-  node = 'https://rpc.testnet-02.midnight.network';
+export class PreprodRemoteConfig implements Config {
+  logDir = pathUtils.resolve(currentDir, '..', 'logs', 'preprod', `${new Date().toISOString()}.log`);
+  indexer = 'https://indexer.preprod.midnight.network/api/v4/graphql';
+  indexerWS = 'wss://indexer.preprod.midnight.network/api/v4/graphql/ws';
+  node = 'https://rpc.preprod.midnight.network';
   proofServer = 'http://127.0.0.1:6300';
   constructor() {
-    setNetworkId(NetworkId.TestNet);
+    setNetworkId(NETWORK_IDS.Preprod);
   }
 }
 
@@ -212,10 +220,10 @@ export class BrowserTestnetLocalConfig implements BrowserConfig {
   indexer = 'http://127.0.0.1:8088/api/v1/graphql';
   indexerWS = 'ws://127.0.0.1:8088/api/v1/graphql/ws';
   proofServer = 'http://127.0.0.1:6300';
-  networkId = NetworkId.TestNet;
+  networkId: NetworkId = NETWORK_IDS.TestNet;
   loggingLevel = 'info';
   constructor() {
-    setNetworkId(NetworkId.TestNet);
+    setNetworkId(NETWORK_IDS.TestNet);
   }
 }
 
@@ -223,41 +231,41 @@ export class BrowserStandaloneConfig implements BrowserConfig {
   indexer = 'http://127.0.0.1:8088/api/v1/graphql';
   indexerWS = 'ws://127.0.0.1:8088/api/v1/graphql/ws';
   proofServer = 'http://127.0.0.1:6300';
-  networkId = NetworkId.Undeployed;
+  networkId: NetworkId = NETWORK_IDS.Undeployed;
   loggingLevel = 'info';
   constructor() {
-    setNetworkId(NetworkId.Undeployed);
+    setNetworkId(NETWORK_IDS.Undeployed);
   }
 }
 
-export class BrowserTestnetRemoteConfig implements BrowserConfig {
-  indexer = 'https://indexer.testnet-02.midnight.network/api/v1/graphql';
-  indexerWS = 'wss://indexer.testnet-02.midnight.network/api/v1/graphql/ws';
+export class BrowserPreprodConfig implements BrowserConfig {
+  indexer = 'https://indexer.preprod.midnight.network/api/v4/graphql';
+  indexerWS = 'wss://indexer.preprod.midnight.network/api/v4/graphql/ws';
   proofServer = 'http://127.0.0.1:6300';
-  networkId = NetworkId.TestNet;
+  networkId: NetworkId = NETWORK_IDS.Preprod;
   loggingLevel = 'trace';
   constructor() {
-    setNetworkId(NetworkId.TestNet);
+    setNetworkId(NETWORK_IDS.Preprod);
   }
 }
 
 // Configuration factory for browser environments
-export type ConfigEnvironment = 'standalone' | 'testnet-local' | 'testnet-remote';
+export type ConfigEnvironment = 'standalone' | 'testnet-local' | 'preprod';
 
-export function createBrowserConfig(environment: ConfigEnvironment = 'testnet-remote'): BrowserConfig {
+export function createBrowserConfig(environment: ConfigEnvironment = 'preprod'): BrowserConfig {
   switch (environment) {
     case 'standalone':
       return new BrowserStandaloneConfig();
     case 'testnet-local':
       return new BrowserTestnetLocalConfig();
-    case 'testnet-remote':
-      return new BrowserTestnetRemoteConfig();
+    case 'preprod':
+      return new BrowserPreprodConfig();
     default:
       throw new Error(`Unknown environment: ${environment}`);
   }
 }
 
-// Default browser configuration (mirrors current config.json values)
+// Default browser configuration: preprod stack.
 export function getDefaultBrowserConfig(): BrowserConfig {
-  return createBrowserConfig('testnet-remote');
+  return createBrowserConfig('preprod');
 }
