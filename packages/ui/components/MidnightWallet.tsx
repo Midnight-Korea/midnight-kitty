@@ -44,7 +44,6 @@ import { MidnightWalletErrorType, WalletWidget } from './WalletWidget';
 import { connectToWallet } from '@repo/kitties-api/browser';
 import { noopProofClient, proofClient } from '@repo/kitties-api/browser-api';
 import { WrappedPublicDataProvider } from '@repo/kitties-api/browser';
-import { WrappedPrivateStateProvider } from '@repo/kitties-api/browser';
 import { CachedFetchZkConfigProvider } from '@repo/kitties-api/browser-api';
 import type { WalletAPI } from '@repo/kitties-api';
 
@@ -148,17 +147,18 @@ export const MidnightWalletProvider: React.FC<MidnightWalletProviderProps> = ({ 
   // Account id scopes the private state store to the connected wallet.
   const accountId = walletAPI?.coinPublicKey || 'kitties-default-account';
 
+  // Use the level provider directly. midnight-js 4.x calls
+  // `privateStateProvider.setContractAddress(...)` during deploy/connect; a
+  // hand-rolled wrapper that doesn't delegate that method breaks private-state
+  // access ("Contract address not set").
   const privateStateProvider = useMemo(
     () =>
-      new WrappedPrivateStateProvider(
-        levelPrivateStateProvider({
-          privateStateStoreName: contractConfig.privateStateStoreName,
-          privateStoragePasswordProvider: () => DEV_PRIVATE_STATE_PASSWORD,
-          accountId,
-        }),
-        logger,
-      ),
-    [logger, accountId],
+      levelPrivateStateProvider({
+        privateStateStoreName: contractConfig.privateStateStoreName,
+        privateStoragePasswordProvider: () => DEV_PRIVATE_STATE_PASSWORD,
+        accountId,
+      }),
+    [accountId],
   );
 
   const zkConfigProvider = useMemo(

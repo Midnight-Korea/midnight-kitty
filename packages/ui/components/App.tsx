@@ -55,10 +55,11 @@ const KittiesAppContent: React.FC<{ logger: Logger }> = () => {
     setDeployError(null);
     setDeployedAddress(null);
     try {
-      const initialPrivateState = await KittiesAPI.getOrCreateInitialPrivateState(
-        kittiesProviders.privateStateProvider,
-      );
-      const api = await KittiesAPI.deploy(kittiesProviders, initialPrivateState);
+      // Do NOT pre-read the private-state provider here: in midnight-js 4.x it is
+      // contract-address-scoped and throws ("Contract address not set") if accessed
+      // before the address exists. deploy() seeds a fresh private state internally
+      // and midnight-js stores it under the new address after deploy.
+      const api = await KittiesAPI.deploy(kittiesProviders, {});
       setDeployedAddress(api.deployedContractAddress);
     } catch (err) {
       setDeployError(err instanceof Error ? err.message : 'Failed to deploy contract');

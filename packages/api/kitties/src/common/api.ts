@@ -423,7 +423,11 @@ export class KittiesAPI implements DeployedKittiesAPI {
         // The Kitties contract constructor takes no initialization arguments.
         args: [],
         privateStateId: 'kittiesPrivateState',
-        initialPrivateState: await KittiesAPI.getPrivateState('kittiesPrivateState', providers.privateStateProvider),
+        // Pass a fresh (empty) private state. In midnight-js 4.x the private-state
+        // provider is contract-address-scoped and throws if read before the address
+        // is known (which it isn't yet at deploy time). midnight-js stores it under
+        // the new address internally once deploy completes.
+        initialPrivateState: createKittiesPrivateState(),
       } as any);
 
       console.log(`Deployed contract at address: ${deployedContract.deployTxData.public.contractAddress}`);
@@ -459,7 +463,11 @@ export class KittiesAPI implements DeployedKittiesAPI {
    */
   static async connect(providers: KittiesProviders, contractAddress: ContractAddress | string): Promise<KittiesAPI> {
     console.log(`Connecting to kitties contract at ${contractAddress}...`);
-    const state = await this.getOrCreateInitialPrivateState(providers.privateStateProvider);
+    // Don't read the private-state provider here: in 4.x it is contract-address
+    // scoped and throws ("setContractAddress() before accessing private state") if
+    // accessed first. findDeployedContract sets the address and loads any stored
+    // private state internally; this fresh empty state is only the seed/fallback.
+    const state = createKittiesPrivateState();
     try {
       const deployedContract = await findDeployedContract(providers as any, {
         contractAddress,
