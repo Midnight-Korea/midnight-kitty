@@ -12,6 +12,27 @@
 
 </div>
 
+---
+
+## 🔧 What changed in this fork — preprod migration (2026-06)
+
+The upstream tutorial targets the **retired testnet-02** stack and no longer works out of the box (dead endpoints; the modern Lace/Midnight wallet only supports `preprod`/`preview`). This fork migrates the whole frontend to the live **preprod** network so you can deploy + mint with Lace.
+
+- **SDK**: midnight-js `2.0.2 → 4.1.1`, dapp-connector-api `3 → 4.0.1`, `ledger@4`/`zswap` → `@midnight-ntwrk/ledger-v8 8.1.0`, compact-runtime `0.8.1 → 0.16.0`
+- **Compiler**: Compact `0.24.0 → 0.31.0` (emits ESM `index.js`); contract now exports a `CompiledContract` for 4.x `deployContract`/`findDeployedContract`
+- **Wallet**: new `connect('preprod')` flow (`getShieldedAddresses`/`getConfiguration`), `balanceUnsealedTransaction` + ledger-v8 transactions; `NetworkId` is now a string
+- **NFT lib**: patched the now-reserved keyword `from → fromOwner` (`patches/`)
+- **Proof server**: `midnightntwrk/proof-server:8.0.3` on `:6300` (`packages/cli/proof-server-preprod.yml`); the app proves against the local server
+- **UI**: added a **"Deploy new Kitties contract"** button (Lace-signed deploy)
+- **Endpoints**: preprod indexer `/api/v4`, `rpc.preprod.midnight.network`
+
+**Run:** start Docker + the proof server → fund Lace on preprod (faucet → *Generate tDUST*) → `yarn start` → Connect → Deploy → New Kittie.
+Full migration details, gotchas, and the local-standalone fallback are in [`docs/DEPLOYMENT_NOTES.md`](docs/DEPLOYMENT_NOTES.md) §D.
+
+<div align="center">
+
+</div>
+
 ## Table of Contents
 
 - [Project Overview](#project-overview)
