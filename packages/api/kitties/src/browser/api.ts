@@ -49,7 +49,9 @@ export { CachedFetchZkConfigProvider } from './zk-config-provider.js';
  * 16 characters. This is NOT a secret protecting on-chain funds - it only encrypts
  * the locally-cached witness/private state in the browser's IndexedDB.
  */
-export const DEV_PRIVATE_STATE_PASSWORD = 'midnight-kitties-dev-password';
+// Must satisfy the level provider's strength policy: >=16 chars AND >=3 of
+// {uppercase, lowercase, digits, special}. This one has all 4.
+export const DEV_PRIVATE_STATE_PASSWORD = 'Midnight-Kitties-Dev-2026';
 
 /**
  * Build the full set of providers used by the Kitties dApp.

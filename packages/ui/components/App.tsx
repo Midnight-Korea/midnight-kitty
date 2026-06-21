@@ -59,9 +59,14 @@ const KittiesAppContent: React.FC<{ logger: Logger }> = () => {
       // contract-address-scoped and throws ("Contract address not set") if accessed
       // before the address exists. deploy() seeds a fresh private state internally
       // and midnight-js stores it under the new address after deploy.
+      console.log('[deploy] starting deploy (this waits for on-chain finalization)...');
       const api = await KittiesAPI.deploy(kittiesProviders, {});
-      setDeployedAddress(api.deployedContractAddress);
+      const ca = api.deployedContractAddress;
+      console.log('[deploy] ✅ DONE. CONTRACT ADDRESS =', ca);
+      (window as unknown as { __lastCA?: string }).__lastCA = ca;
+      setDeployedAddress(ca);
     } catch (err) {
+      console.error('[deploy] ❌ FAILED:', err);
       setDeployError(err instanceof Error ? err.message : 'Failed to deploy contract');
     } finally {
       setDeploying(false);
