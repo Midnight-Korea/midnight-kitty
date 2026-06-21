@@ -85,11 +85,12 @@ export const createKittiesProviders = (
       accountId: walletAPI.coinPublicKey || 'kitties-default-account',
     });
 
-  // Proving is delegated to the wallet-configured proof server, using the ZK
-  // config provider to resolve prover/verifier keys + ZKIR.
-  const proofProvider = walletAPI.configuration.proverServerUri
-    ? proofClient<ImpureKittiesCircuits>(walletAPI.configuration.proverServerUri, zkConfigProvider)
-    : noopProofClient();
+  // Proving runs against the LOCAL proof server the user runs on :6300. On preprod
+  // the wallet's getConfiguration().proverServerUri is deprecated/often points at an
+  // address the browser can't reach ("TypeError: Failed to fetch" during prove), so
+  // prefer the local proof server and only fall back to the wallet's URI.
+  const proverServerUri = 'http://127.0.0.1:6300';
+  const proofProvider = proofClient<ImpureKittiesCircuits>(proverServerUri, zkConfigProvider);
 
   return {
     privateStateProvider,

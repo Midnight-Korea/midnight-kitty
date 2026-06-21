@@ -194,7 +194,10 @@ export const MidnightWalletProvider: React.FC<MidnightWalletProviderProps> = ({ 
   }
 
   const proofProvider = useMemo<ProofProvider>(() => {
-    const proverUri = walletAPI?.configuration.proverServerUri ?? config.PROOF_SERVER_URI;
+    // Prefer the LOCAL proof server (config.PROOF_SERVER_URI = http://127.0.0.1:6300).
+    // preprod's wallet getConfiguration().proverServerUri is deprecated/unreachable
+    // from the browser and causes "TypeError: Failed to fetch" during proving.
+    const proverUri = config.PROOF_SERVER_URI ?? walletAPI?.configuration.proverServerUri;
     if (walletAPI && proverUri) {
       return proofClient<ImpureKittiesCircuits>(proverUri, zkConfigProvider);
     }
